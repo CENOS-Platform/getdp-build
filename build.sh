@@ -47,24 +47,7 @@ BUILDDIR=${BUILDDIR:-build}
 [ -d "$MKL/include" ]        || { echo "no $MKL/include"; exit 1; }
 [ -d src/petsc/config ]      || { echo "sources missing - run: git submodule update --init --recursive"; exit 1; }
 
-# git on Windows defaults to core.autocrlf=true, which checks the submodules out
-# with CRLF and breaks their shell scripts ("$'\r': command not found").
-if grep -qU $'\r' src/OpenBLAS/c_check 2>/dev/null; then
-  echo "submodules were checked out with CRLF - renormalizing to LF"
-  if [ -n "$(git submodule foreach --quiet 'git status --porcelain')" ]; then
-    echo "  local changes in a submodule - not touching them. Fix by hand:"
-    echo "    git config core.autocrlf false && git config core.eol lf"
-    echo "    git submodule foreach --recursive 'git config core.autocrlf false; git config core.eol lf; git rm --cached -r . >/dev/null; git reset --hard'"
-    exit 1
-  fi
-  git config core.autocrlf false
-  git config core.eol lf
-  git submodule foreach --recursive --quiet 'git config core.autocrlf false; git config core.eol lf; git rm --cached -r . >/dev/null; git reset --hard >/dev/null'
-  if grep -qU $'\r' src/OpenBLAS/c_check 2>/dev/null; then
-    echo "  renormalizing did not take - fix by hand (see above)"; exit 1
-  fi
-  echo "  done"
-fi
+./scripts/fix_eol.sh                        # CRLF submodule checkout -> LF
 
 echo "MKL       : $MKL"
 echo "Python    : ${PY:-<none - test binary only>}"

@@ -1,10 +1,11 @@
 # Build scripts
 
 All honour `ROOT` (sources) and `MKL` (CENOS `backend/bin/Library`) from the environment.
-`../build.sh` runs all four in order — use these directly only to rebuild one stage.
+`../build.sh` runs them in order — use these directly only to redo one stage.
 
 | script | builds | notes |
 |---|---|---|
+| `fix_eol.sh` | nothing - renormalizes submodule checkouts to LF | run by `build.sh`; needed because git on Windows checks them out with CRLF |
 | `build_deps.sh` | OpenBLAS, LAPACK, gmsh | once; skips whatever already exists |
 | `build_metis_only.sh` | METIS for mingw | PETSc's `--download-metis` cannot work here |
 | `build_mkl_petsc.sh` | PETSc `complex_mkl_metis` | MUMPS 5.6.2/METIS + MKL PARDISO; needs internet (PETSc fetches MUMPS) |

@@ -1,17 +1,40 @@
 # Building CENOS GetDP (Windows: Cygwin + mingw-w64 cross-compile)
 
-Everything runs in a **Cygwin login shell**:
+Everything runs in a **Cygwin login shell**. Open it from PowerShell or cmd:
 
 ```
-<cygwin>\bin\bash.exe -l
+D:\cygwin64\bin\bash.exe -l
 ```
 
-`-l` matters — without it `/usr/bin` is off `PATH` and `python3`/`grep` "aren't found".
+- Use your own install root (whatever you passed to `-R` in step 0).
+- **Type the full path, or `.\bash.exe -l` from that directory.** PowerShell does
+  not search the current directory, so a bare `bash.exe` resolves via PATH to
+  `C:\Windows\System32\bash.exe` - the **WSL launcher**. Check with
+  `Get-Command bash.exe`. Confirm you are in Cygwin with `uname -o` (`Cygwin`,
+  not `GNU/Linux`).
+- **Not WSL, not Git Bash, not PowerShell.** WSL is a separate Linux - its `apt`
+  packages are useless here. If your prompt looks like `user@HOST:/mnt/d/...`,
+  you are in WSL.
+- `-l` matters: without it `/usr/bin` is off `PATH` and `python3`/`grep`
+  "aren't found".
+- The install command in step 0 disables shortcuts, so there is no Start Menu
+  entry - running `bash.exe -l` is the way in.
 
 ## Quick start
 
+**Clone with CRLF conversion off** — git on Windows defaults to `core.autocrlf=true`, which
+checks the submodules out with CRLF and breaks their shell scripts:
+
 ```bash
-git submodule update --init --recursive
+git -c core.autocrlf=false clone --recurse-submodules \
+    https://github.com/CENOS-Platform/getdp-build.git
+```
+
+Already cloned the normal way? `build.sh` fixes it (via `scripts/fix_eol.sh`, which you can
+also run by hand).
+
+```bash
+git submodule update --init --recursive       # if not cloned with --recurse-submodules
 
 C=/cygdrive/d/source/cenos/backend/bin      # a CENOS install (adjust)
 MKL=$C/Library PY=$C ./build.sh             # shippable binary, embedded Python
@@ -279,18 +302,25 @@ An earlier attempt built PETSc itself with CUDA; that only accelerates PETSc's *
 solvers, which this product doesn't use. `cuda-build.md` keeps that history — ignore it
 unless you specifically want the iterative path.
 
-Install:
-- NVIDIA CUDA Toolkit (for `cudart`)
-- NVIDIA cuDSS — a **separate** download from the Toolkit. Use the subdirectory matching
-  your CUDA major version, e.g. `v0.8/13/{include,lib,bin}` for CUDA 13.
+Two variables are needed, and **both may point at the same directory**:
 
-Build:
+| variable | must contain |
+|---|---|
+| `CUDA_TOOLKIT_DIR` | `include/cuda_runtime.h`, `lib/x64/cudart.lib` |
+| `CUDSS_DIR` | `include/cudss.h`, `lib/cudss.lib` (or `lib/13/`) |
+
+CENOS bundles all four in `<cenos>/backend/bin/Lib/site-packages/nvidia/cu13`, so no NVIDIA
+installer is required:
 
 ```bash
-export CUDA_TOOLKIT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2"
-export CUDSS_DIR="C:/Program Files/NVIDIA cuDSS/v0.8"
-# add -DENABLE_CUDSS=1 to the cmake line in step 7/7a (needs ENABLE_PETSC=1)
+NV=$C/Lib/site-packages/nvidia/cu13
+MKL=$C/Library PY=$C CUDA_TOOLKIT_DIR=$NV CUDSS_DIR=$NV ./build.sh
 ```
+
+Standalone installs work too — CUDA Toolkit for `cudart`, plus cuDSS as a **separate**
+download, using the subdirectory matching your CUDA major version (`v0.8/13/...` for
+CUDA 13). Doing it by hand instead of via `build.sh`: export the two variables and add
+`-DENABLE_CUDSS=1` to the cmake line in step 7/7a (needs `ENABLE_PETSC=1`).
 
 Ship these DLLs beside `getdp.exe` (nothing else is needed):
 `cudss64_0.dll`, `cudart64_13.dll` (from `CUDA/v<ver>/bin/x64/`), `cublas64_13.dll`,
@@ -304,5 +334,15 @@ Falls back to the CPU solver automatically if no GPU/driver is present.
 
 ## Incremental rebuilds
 
-Don't redo the above — `rebuild_getdp.sh`, or from the relevant `build*/` dir:
-`make parser` (only if the grammar changed) then `make -j"$(nproc)"`.
+Don't redo the above. From the relevant `build*/` dir: `make parser` (only if the
+grammar changed) then `make -j"$(nproc)"`. Or re-run `scripts/build_getdp_arch.sh`
+(it wipes the build dir).
+
+**Export `PETSC_DIR` and `PETSC_ARCH` first.** GetDP's cmake reads them from the
+environment, not the cache, and a `make` can silently re-run cmake: without them you get a
+full rebuild of a binary **without PETSc** (`ENABLE_PETSC:BOOL=1` still in `CMakeCache.txt`,
+so nothing looks wrong; at runtime it prompts for SPARSKIT parameters). Verify with
+
+```bash
+grep HAVE_PETSC build_best/src/common/GetDPConfig.h   # want: #define HAVE_PETSC
+```
