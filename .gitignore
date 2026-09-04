@@ -1,0 +1,8 @@
+# build outputs (everything is built in-tree by the scripts)
+src/*/build*/
+src/OpenBLAS/*.a
+src/OpenBLAS/*.dll*
+src/petsc/complex_*/
+metis-mingw/
+msmpi/
+*.log
