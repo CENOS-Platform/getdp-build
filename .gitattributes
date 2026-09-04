@@ -1,0 +1,5 @@
+# CRLF silently breaks the backslash line-continuations in the build scripts,
+# and the build then "succeeds" while doing nothing. Force LF everywhere.
+* text=auto eol=lf
+*.sh text eol=lf
+*.c  text eol=lf
