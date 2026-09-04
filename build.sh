@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full build of the recommended GetDP (MUMPS/METIS + MKL PARDISO).
-# Cygwin login shell, after ./bootstrap.sh:
+# Cygwin login shell, after: git submodule update --init --recursive
 #     MKL=/cygdrive/d/source/cenos/backend/bin/Library ./build.sh
 set -e
 cd "$(dirname "$0")"
