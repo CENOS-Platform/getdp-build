@@ -28,9 +28,9 @@ switch or fall back.
 
 ```bash
 # once: steps 2-4 below (OpenBLAS, LAPACK, gmsh)
-$ROOT/build_metis_only.sh                                  # METIS for mingw
-$ROOT/build_mkl_petsc.sh                                   # PETSc arch complex_mkl_metis
-$ROOT/build_getdp_arch.sh complex_mkl_metis build_best $MKL/lib/mkl_rt.lib
+./scripts/build_metis_only.sh                                  # METIS for mingw
+./scripts/build_mkl_petsc.sh                                   # PETSc arch complex_mkl_metis
+./scripts/build_getdp_arch.sh complex_mkl_metis build_best $MKL/lib/mkl_rt.lib
 ```
 
 Run a script from outside Cygwin with:
@@ -96,11 +96,10 @@ git clone https://github.com/xianyi/OpenBLAS.git
 git clone https://github.com/Reference-LAPACK/lapack.git
 git clone http://gitlab.onelab.info/gmsh/gmsh.git
 git clone https://gitlab.com/petsc/petsc.git
-git clone https://bitbucket.org/petsc/pkg-mumps.git
 git clone https://github.com/CENOS-Platform/cenos-getdp-fork.git
 ```
 
-`pkg-mumps` is only a source snapshot; PETSc builds MUMPS from it.
+PETSc downloads MUMPS 5.6.2 itself during configure, so it needs network access there.
 
 Optional, for reproducibility — known-good commits (`git -C <dir> checkout <hash>`):
 
@@ -109,7 +108,6 @@ OpenBLAS          1533fe49bef51ff49e4358a2687f1e475801f9fd
 lapack            6b1827041fcd4b2c50ee5d379c2aa0900cb3cbd7
 gmsh              7d9d7431dedcee1e1d0ae3d25edd49e9e45c133f
 petsc             6b3135e3cbe5b8af31c051d7bc4b181affcff0ee
-pkg-mumps         6d1470374d329fac27847ebd65acdea68249d733
 cenos-getdp-fork  8bc602fd490242cac99be66c8c388acd9ccdd889
 ```
 
@@ -183,7 +181,7 @@ MUMPS uses; without it MUMPS falls back to PORD, which costs ~16% more arithmeti
 more memory on our test cases.
 
 ```bash
-$ROOT/build_metis_only.sh      # -> $ROOT/metis-mingw/{include,lib}
+./scripts/build_metis_only.sh      # -> $ROOT/metis-mingw/{include,lib}
 ```
 
 It has its own script because PETSc's `--download-metis` cannot work here: PETSc forces
@@ -198,12 +196,8 @@ Pick **one** arch. Same `PETSC_DIR`, different `PETSC_ARCH`.
 
 | arch | script | solvers |
 |---|---|---|
-| **`complex_mkl_metis`** | **`build_mkl_petsc.sh`** | **MUMPS/METIS + MKL PARDISO — recommended** |
-| `complex_mumps_metis` | `build_metis_petsc.sh` | MUMPS/METIS |
-| `complex_mumps562` | `build_mumps562_petsc.sh` | MUMPS 5.6.2/METIS |
-| `complex_mumps_seq` | 6a below | MUMPS/PORD (the original build) |
-| `complex_mpi_mumps` | `build_mpi_petsc.sh` | MPI MUMPS — builds, but multi-rank solve crashes |
-| `complex_mumps_seq_cuda` | see `cuda-build.md` | + cuDSS (GPU) |
+| **`complex_mkl_metis`** | **`scripts/build_mkl_petsc.sh`** | **MUMPS 5.6.2/METIS + MKL PARDISO — recommended** |
+| `complex_mumps_seq` | 6a below | MUMPS 5.4.1/PORD — the original build, kept for reference |
 
 Two things that bite on the MKL archs:
 
@@ -222,7 +216,7 @@ cd $PETSC_DIR
   FC=x86_64-w64-mingw32-gfortran PETSC_ARCH=$PETSC_ARCH \
   --with-debugging=0 --with-mpi=0 --with-mpiuni-fortran-binding=0 \
   --with-fortran-bindings=0 --with-mumps-serial \
-  --download-mumps=$ROOT/pkg-mumps --download-mumps-commit=HEAD \
+  --download-mumps \
   --with-shared-libraries=0 --with-x=0 --with-ssl=0 \
   --with-scalar-type=complex --with-openmp=1 \
   --with-blas-lib=$ROOT/OpenBLAS/libopenblas.a \
@@ -241,15 +235,13 @@ make PETSC_DIR=$PETSC_DIR PETSC_ARCH=$PETSC_ARCH all
 Generic helper (no embedded Python — fine for testing, not for shipping):
 
 ```bash
-$ROOT/build_getdp_arch.sh <PETSC_ARCH> <build-dir> <blas-libs>
+$ROOT/../scripts/build_getdp_arch.sh <PETSC_ARCH> <build-dir> <blas-libs>
 
-$ROOT/build_getdp_arch.sh complex_mkl_metis   build_best  $MKL/lib/mkl_rt.lib
-$ROOT/build_getdp_arch.sh complex_mumps_metis build_metis $ROOT/OpenBLAS/libopenblas.a
+$ROOT/../scripts/build_getdp_arch.sh complex_mkl_metis   build_best  $MKL/lib/mkl_rt.lib
 ```
 
 `<blas-libs>` **must match the BLAS the arch was configured with**, or the binary ends up
-with both OpenBLAS and MKL linked in. For `complex_mpi_mumps` use `build_getdp_mpi.sh`
-(it adds ScaLAPACK and the `libscalapack_alias.a` name bridge).
+with both OpenBLAS and MKL linked in.
 
 ### 7a. Shipped binary (embedded Python)
 
