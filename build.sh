@@ -15,8 +15,13 @@
 #                           CENOS ships one at  <cenos>/backend/bin
 #   PYLIB=<file>            optional, default python310.lib
 #
-#   CUDSS_DIR=<dir>         optional. NVIDIA cuDSS -> GPU direct solve.
-#   CUDA_TOOLKIT_DIR=<dir>  required together with CUDSS_DIR.
+#   CUDSS_DIR=<dir>         optional. Supplies include/cudss.h + lib/cudss.lib.
+#   CUDA_TOOLKIT_DIR=<dir>  required together with CUDSS_DIR. Supplies
+#                           include/cuda_runtime.h + lib/x64/cudart.lib.
+#                           Both may be the SAME directory - CENOS bundles all
+#                           four at  <cenos>/backend/bin/Lib/site-packages/nvidia/cu13
+#                           No CUDA Toolkit install and no nvcc needed: cuDSS is
+#                           called as a plain host API, but cudart is still linked.
 #
 #   BUILDDIR=<name>         optional, default "build"
 #
@@ -28,10 +33,9 @@
 #   C=/cygdrive/d/source/cenos/backend/bin
 #   MKL=$C/Library PY=$C ./build.sh
 #
-#   # + GPU
-#   MKL=$C/Library PY=$C \
-#   CUDA_TOOLKIT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2" \
-#   CUDSS_DIR="C:/Program Files/NVIDIA cuDSS/v0.8" ./build.sh
+#   # + GPU, all from the same CENOS install
+#   NV=$C/Lib/site-packages/nvidia/cu13
+#   MKL=$C/Library PY=$C CUDA_TOOLKIT_DIR=$NV CUDSS_DIR=$NV ./build.sh
 #
 set -e
 cd "$(dirname "$0")"
@@ -42,6 +46,25 @@ BUILDDIR=${BUILDDIR:-build}
 [ -f "$MKL/lib/mkl_rt.lib" ] || { echo "no $MKL/lib/mkl_rt.lib"; exit 1; }
 [ -d "$MKL/include" ]        || { echo "no $MKL/include"; exit 1; }
 [ -d src/petsc/config ]      || { echo "sources missing - run: git submodule update --init --recursive"; exit 1; }
+
+# git on Windows defaults to core.autocrlf=true, which checks the submodules out
+# with CRLF and breaks their shell scripts ("$'\r': command not found").
+if grep -qU $'\r' src/OpenBLAS/c_check 2>/dev/null; then
+  echo "submodules were checked out with CRLF - renormalizing to LF"
+  if [ -n "$(git submodule foreach --quiet 'git status --porcelain')" ]; then
+    echo "  local changes in a submodule - not touching them. Fix by hand:"
+    echo "    git config core.autocrlf false && git config core.eol lf"
+    echo "    git submodule foreach --recursive 'git config core.autocrlf false; git config core.eol lf; git rm --cached -r . >/dev/null; git reset --hard'"
+    exit 1
+  fi
+  git config core.autocrlf false
+  git config core.eol lf
+  git submodule foreach --recursive --quiet 'git config core.autocrlf false; git config core.eol lf; git rm --cached -r . >/dev/null; git reset --hard >/dev/null'
+  if grep -qU $'\r' src/OpenBLAS/c_check 2>/dev/null; then
+    echo "  renormalizing did not take - fix by hand (see above)"; exit 1
+  fi
+  echo "  done"
+fi
 
 echo "MKL       : $MKL"
 echo "Python    : ${PY:-<none - test binary only>}"
