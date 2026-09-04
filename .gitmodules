@@ -1,0 +1,18 @@
+[submodule "OpenBLAS"]
+	path = src/OpenBLAS
+	url = https://github.com/xianyi/OpenBLAS.git
+[submodule "lapack"]
+	path = src/lapack
+	url = https://github.com/Reference-LAPACK/lapack.git
+[submodule "gmsh"]
+	path = src/gmsh
+	url = http://gitlab.onelab.info/gmsh/gmsh.git
+[submodule "petsc"]
+	path = src/petsc
+	url = https://gitlab.com/petsc/petsc.git
+[submodule "pkg-mumps"]
+	path = src/pkg-mumps
+	url = https://bitbucket.org/petsc/pkg-mumps.git
+[submodule "cenos-getdp-fork"]
+	path = src/cenos-getdp-fork
+	url = https://github.com/CENOS-Platform/cenos-getdp-fork.git
