@@ -40,6 +40,9 @@
 set -e
 cd "$(dirname "$0")"
 export ROOT="$(pwd)/src"
+# cmake 4 dropped compatibility with cmake_minimum_required(VERSION < 3.5), which
+# several pinned submodules still declare (gmsh 3.3, METIS 2.8).
+export CMAKE_POLICY_VERSION_MINIMUM=${CMAKE_POLICY_VERSION_MINIMUM:-3.5}
 BUILDDIR=${BUILDDIR:-build}
 
 : "${MKL:?set MKL to a oneMKL install (see the header of this script)}"

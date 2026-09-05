@@ -24,9 +24,11 @@ fi
 
 if [ ! -f /usr/local/lib/libgmsh.a ]; then
   echo "== gmsh =="
+  rm -rf "$ROOT/gmsh/build"   # a failed configure leaves a stale cache
   mkdir -p "$ROOT/gmsh/build"
   ( cd "$ROOT/gmsh/build" \
-    && cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+    && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
              -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
              -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
              -DENABLE_BUILD_LIB=1 -DENABLE_BUILD_SHARED=OFF -DENABLE_BUILD_DYNAMIC=OFF \

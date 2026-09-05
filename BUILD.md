@@ -332,6 +332,30 @@ symbols that mingw doesn't define. The stub supplies them — needed by any ming
 
 Falls back to the CPU solver automatically if no GPU/driver is present.
 
+## Resuming after a failed stage
+
+Every stage is guarded by a sentinel file, so re-running `./build.sh` picks up where it
+stopped — nothing already built is redone:
+
+| stage | skipped when this exists | rebuild anyway |
+|---|---|---|
+| OpenBLAS | `src/OpenBLAS/libopenblas.a` | delete it |
+| LAPACK | `src/lapack/build/lib/liblapack.a` | delete it |
+| gmsh | `/usr/local/lib/libgmsh.a` | delete it |
+| METIS | `metis-mingw/lib/libmetis.a` | `FORCE=1` |
+| PETSc | `petsc/complex_mkl_metis/lib/libpetsc.a` | `FORCE=1` |
+
+GetDP itself is always rebuilt (`build_getdp_arch.sh` wipes its build dir).
+
+Check what you already have before re-running:
+
+```bash
+ls -la src/OpenBLAS/libopenblas.a src/lapack/build/lib/liblapack.a
+```
+
+If a stage failed at the *configure* step, delete its build directory first — a partial
+`CMakeCache.txt` survives and gets reused (`build_deps.sh` does this for gmsh already).
+
 ## Incremental rebuilds
 
 Don't redo the above. From the relevant `build*/` dir: `make parser` (only if the

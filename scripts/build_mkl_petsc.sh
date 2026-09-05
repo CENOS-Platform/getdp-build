@@ -24,6 +24,13 @@ MUMPS_TARBALL=${MUMPS_TARBALL:-https://web.cels.anl.gov/projects/petsc/download/
 export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$MKL/bin:/cygdrive/d/source/cenos/backend/bin:$PATH
 export PETSC_DIR=$ROOT/petsc
 export PETSC_ARCH=complex_mkl_metis
+
+# PETSc takes ~30 min and the configure below wipes $PETSC_ARCH, so never redo it
+# implicitly on a resumed build.
+if [ -f "$PETSC_DIR/$PETSC_ARCH/lib/libpetsc.a" ] && [ -z "${FORCE:-}" ]; then
+  echo "PETSc $PETSC_ARCH already built - skipping. FORCE=1 to rebuild."
+  exit 0
+fi
 cd $PETSC_DIR
 
 # PETSc caches configure options in $PETSC_DIR/RDict.log and merges them into
