@@ -6,3 +6,4 @@ src/petsc/complex_*/
 metis-mingw/
 msmpi/
 *.log
+src/pkg-metis/

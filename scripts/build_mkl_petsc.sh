@@ -19,9 +19,9 @@ set -e
 ROOT=${ROOT:-/cygdrive/d/source/for_getdp_build}
 MKL=${MKL:-/cygdrive/d/source/cenos/backend/bin/Library}
 MUMPS_TARBALL=${MUMPS_TARBALL:-https://web.cels.anl.gov/projects/petsc/download/externalpackages/MUMPS_5.6.2.tar.gz}
-# MKL DLLs must be on PATH during configure: PETSc runs test programs, and if
-# they fail to launch it concludes "64-bit BLAS indices" and PARDISO refuses.
-export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$MKL/bin:/cygdrive/d/source/cenos/backend/bin:$PATH
+# MKL DLLs must be on PATH during configure (PETSc runs test programs). They live
+# next to $MKL (Library/bin) and, in a CENOS layout, one level up in backend/bin.
+export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$MKL/bin:$(dirname "$MKL"):$PATH
 export PETSC_DIR=$ROOT/petsc
 export PETSC_ARCH=complex_mkl_metis
 

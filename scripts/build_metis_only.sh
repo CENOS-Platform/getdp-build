@@ -2,12 +2,24 @@
 set -e
 export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$PATH
 ROOT=${ROOT:-/cygdrive/d/source/for_getdp_build}
-SRC=$ROOT/petsc/complex_mumps_metis/externalpackages/git.metis
+# METIS source: the same pkg-metis PETSc would download (--download-metis cannot
+# work here, see BUILD.md). Cloned on demand at the tag PETSc 3.21 pins.
+METIS_TAG=${METIS_TAG:-v5.1.0-p12}
+SRC=${METIS_SRC:-$ROOT/pkg-metis}
+# an older layout left METIS under a PETSc arch; reuse it if it is there
+OLD=$ROOT/petsc/complex_mumps_metis/externalpackages/git.metis
+[ -f "$OLD/CMakeLists.txt" ] && SRC=$OLD
 PREFIX=$ROOT/metis-mingw
 
 if [ -f "$PREFIX/lib/libmetis.a" ] && [ -z "${FORCE:-}" ]; then
   echo "METIS already built ($PREFIX/lib/libmetis.a) - skipping. FORCE=1 to rebuild."
   exit 0
+fi
+
+if [ ! -f "$SRC/CMakeLists.txt" ]; then
+  echo "fetching METIS ($METIS_TAG)"
+  git -c core.autocrlf=false clone --depth 1 --branch "$METIS_TAG" \
+      https://bitbucket.org/petsc/pkg-metis.git "$SRC"
 fi
 rm -rf $SRC/build-manual
 mkdir -p $SRC/build-manual
