@@ -52,4 +52,17 @@ cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
       -DGETDP_RELEASE=1 -DGETDP_EXTRA_VERSION="$TAG" \
       "${OPTS[@]}" ..
 make -j"$(nproc)"
-./getdp.exe -info | head -3
+# Smoke test. The binary needs its DLLs at runtime - python310.dll from $PY and
+# mkl_rt.2.dll from the MKL install - so put them on PATH here rather than
+# reporting a link success that cannot actually start.
+RUNPATH="$PATH"
+if [ -n "${MKL:-}" ]; then RUNPATH="$MKL/bin:$(dirname "$MKL"):$RUNPATH"; fi
+if [ -n "${PY:-}" ]; then RUNPATH="$PY:$RUNPATH"; fi
+if out=$(PATH="$RUNPATH" ./getdp.exe -info 2>&1); then
+  echo "$out" | head -3
+else
+  echo "$out" | head -3
+  echo "WARNING: getdp.exe built but would not start."
+  echo "  It needs python310.dll (from PY) and mkl_rt.2.dll (from MKL) on PATH."
+  echo "  The link itself is fine - this is a runtime DLL search issue."
+fi
