@@ -7,7 +7,9 @@
 #   PYLIB=<file>            default python310.lib
 #   CUDSS_DIR=<dir>         NVIDIA cuDSS install  -> GPU direct solve
 #   CUDA_TOOLKIT_DIR=<dir>  required when CUDSS_DIR is set
-#   TAG=<string>            version suffix, default +cenos.<arch>
+#   BUILD_METADATA=<string> override the auto-derived "+" metadata (py310.cu13.g<hash>)
+#   GETDP_EXTRA_VERSION=<s> override the whole version suffix; normally left unset
+#                           so the fork's own -cenos.N tag is used
 #
 # <blas-libs> must match the BLAS the arch was configured with, or the binary
 # links two BLAS implementations.
@@ -18,7 +20,6 @@ export PETSC_DIR=$ROOT/petsc
 export PETSC_ARCH=${1:?arch}
 BUILDDIR=${2:?build dir}
 BLASLIBS=${3:?blas libs}
-TAG=${TAG:-+cenos.$PETSC_ARCH}
 
 OPTS=()
 if [ -n "${PY:-}" ]; then
@@ -40,6 +41,50 @@ else
   echo "  cuDSS GPU solve: no"
 fi
 
+# Version build metadata - the part after "+" in e.g.
+#   4.0.0-cenos.1+py310.cu13.g9622b0d
+# The fork's CMakeLists owns the "-cenos.N" pre-release tag (bump
+# GETDP_CENOS_REVISION there); this script only describes what the binary was
+# actually linked against. SemVer ignores everything after "+" when comparing
+# versions, so nothing here can affect ordering - it is traceability only.
+if [ -z "${BUILD_METADATA:-}" ]; then
+  META=()
+  # python310.lib -> py310
+  if [ -n "${PY:-}" ]; then
+    v=${PYLIB%.lib}; v=${v#python}
+    META+=("py${v:-unknown}")
+  fi
+  if [ -n "${CUDSS_DIR:-}" ]; then
+    # CUDART_VERSION is 1000*major + 10*minor, e.g. 13000 -> cu13.
+    cu=""
+    for h in "$CUDA_TOOLKIT_DIR/include/cuda_runtime_api.h" \
+             "$CUDA_TOOLKIT_DIR/include/cuda_runtime.h"; do
+      [ -f "$h" ] || continue
+      v=$(sed -n 's/^[[:space:]]*#define[[:space:]]\{1,\}CUDART_VERSION[[:space:]]\{1,\}\([0-9]\{1,\}\).*/\1/p' "$h" | head -1)
+      [ -n "$v" ] && { cu=$((v / 1000)); break; }
+    done
+    # pip-wheel CUDA layouts (nvidia/cu13/...) ship no cudart header, so the
+    # directory name is the only statement of the major version available.
+    if [ -z "$cu" ]; then
+      case "$(basename "$CUDSS_DIR")" in
+        cu[0-9]*) cu=$(basename "$CUDSS_DIR"); cu=${cu#cu} ;;
+      esac
+    fi
+    # The exact cuDSS version is printed by the solver at runtime, so only the
+    # CUDA major goes in the tag; "cudss" alone if even that is not derivable.
+    if [ -n "$cu" ]; then META+=("cu$cu"); else META+=("cudss"); fi
+  fi
+  h=$(git -C "$ROOT/cenos-getdp-fork" log -1 --format=%h 2>/dev/null || true)
+  [ -n "$h" ] && META+=("g$h")
+  BUILD_METADATA=$(IFS=.; echo "${META[*]}")
+fi
+OPTS+=("-DGETDP_BUILD_METADATA=$BUILD_METADATA")
+# Normally unset: the fork supplies "-cenos.N" itself. Set it only to override.
+if [ -n "${GETDP_EXTRA_VERSION:-}" ]; then
+  OPTS+=("-DGETDP_EXTRA_VERSION=$GETDP_EXTRA_VERSION")
+fi
+echo "  version metadata: ${BUILD_METADATA:-<none>}"
+
 cd "$ROOT/cenos-getdp-fork"
 rm -rf "$BUILDDIR"; mkdir -p "$BUILDDIR"; cd "$BUILDDIR"
 cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
@@ -49,7 +94,7 @@ cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
       -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release \
       -DBLAS_LAPACK_LIBRARIES="$BLASLIBS" \
       -DGMSH_INC=/usr/local/include -DGMSH_LIB=/usr/local/lib/libgmsh.a \
-      -DGETDP_RELEASE=1 -DGETDP_EXTRA_VERSION="$TAG" \
+      -DGETDP_RELEASE=1 \
       "${OPTS[@]}" ..
 make -j"$(nproc)"
 # Smoke test. The binary needs its DLLs at runtime - python310.dll from $PY and

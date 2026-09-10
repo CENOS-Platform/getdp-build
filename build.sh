@@ -71,6 +71,10 @@ if [ -x "$EXE" ]; then
     echo "NOTE: built without embedded Python."
   fi
   echo
+  # The runtime DLL list depends on which features this build enabled, so it is
+  # generated from the build rather than kept in sync by hand. The file is
+  # written beside getdp.exe so it ships with the binary.
+  MD=$(./scripts/gen_linked_libs.sh)
   echo "Runtime DLLs (must be on PATH, or beside getdp.exe):"
   echo "  mkl_rt.2.dll  mkl_core.2.dll  mkl_intel_thread.2.dll  libiomp5md.dll"
   echo "  mkl_def.2.dll  mkl_avx2.2.dll  mkl_avx512.2.dll  mkl_mc3.2.dll"
@@ -81,6 +85,9 @@ if [ -x "$EXE" ]; then
   if [ -n "${CUDSS_DIR:-}" ]; then
     echo "  cudss64_*.dll  cudart64_*.dll  cublas64_*.dll  cublasLt64_*.dll"
   fi
+  echo
+  echo "Full list with versions and licences, ready to ship:"
+  echo "  $MD"
 else
   echo "FAILED: no $EXE"; exit 1
 fi
