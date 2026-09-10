@@ -67,9 +67,20 @@ EXE="$ROOT/cenos-getdp-fork/$BUILDDIR/getdp.exe"
 echo
 if [ -x "$EXE" ]; then
   echo "OK: $EXE"
-  [ -n "${PY:-}" ] || echo "NOTE: built without embedded Python - not the shippable binary."
-  echo "Runtime DLLs: mkl_rt.2.dll and its kernels (already in CENOS backend/bin);"
-  echo "              plus python*.dll if PY was set, and cuDSS/CUDA DLLs if CUDSS_DIR was."
+  if [ -z "${PY:-}" ]; then
+    echo "NOTE: built without embedded Python."
+  fi
+  echo
+  echo "Runtime DLLs (must be on PATH, or beside getdp.exe):"
+  echo "  mkl_rt.2.dll  mkl_core.2.dll  mkl_intel_thread.2.dll  libiomp5md.dll"
+  echo "  mkl_def.2.dll  mkl_avx2.2.dll  mkl_avx512.2.dll  mkl_mc3.2.dll"
+  if [ -n "${PY:-}" ]; then
+    pydll=${PYLIB:-python310.lib}
+    echo "  ${pydll%.lib}.dll"
+  fi
+  if [ -n "${CUDSS_DIR:-}" ]; then
+    echo "  cudss64_*.dll  cudart64_*.dll  cublas64_*.dll  cublasLt64_*.dll"
+  fi
 else
   echo "FAILED: no $EXE"; exit 1
 fi
