@@ -4,20 +4,32 @@
 # build, so the list reflects the features this build actually enabled rather
 # than a hand-maintained guess.
 #
-# From the environment (all set by build.sh):
-#   ROOT, MKL, BUILDDIR   required
-#   PY, PYLIB             embedded Python, if any
+#   gen_linked_libs.sh [build-dir]
+#
+# build-dir defaults to $BUILDDIR, then to "build". ROOT defaults to the src/
+# directory next to this script, so the script also runs standalone:
+#
+#   MKL=$C/Library PY=$C ./scripts/gen_linked_libs.sh build
+#
+# The remaining inputs describe what the build linked against, and should match
+# the ones build.sh was run with:
+#   MKL                           oneMKL prefix, for the version
+#   PY, PYLIB                     embedded Python, if any
 #   CUDSS_DIR, CUDA_TOOLKIT_DIR   GPU direct solve, if any
 set -e
-ROOT=${ROOT:?set ROOT}
-BUILDDIR=${BUILDDIR:?set BUILDDIR}
-OUT="$ROOT/cenos-getdp-fork/$BUILDDIR/linked_libs.md"
-EXE="$ROOT/cenos-getdp-fork/$BUILDDIR/getdp.exe"
+ROOT=${ROOT:-$(cd "$(dirname "$0")/../src" 2>/dev/null && pwd)}
+[ -n "$ROOT" ] || { echo "$0: cannot locate src/ - set ROOT" >&2; exit 1; }
+BUILDDIR=${1:-${BUILDDIR:-build}}
+BDIR="$ROOT/cenos-getdp-fork/$BUILDDIR"
+[ -d "$BDIR" ] || { echo "$0: no build directory $BDIR" >&2
+                       echo "  pass the build dir as the first argument, e.g. $0 build" >&2; exit 1; }
+OUT="$BDIR/linked_libs.md"
+EXE="$BDIR/getdp.exe"
 
 # --- facts about this build -------------------------------------------------
 
 VERSION=$(sed -n 's/^#define GETDP_VERSION  *"\(.*\)"/\1/p' \
-          "$ROOT/cenos-getdp-fork/$BUILDDIR/src/common/GetDPVersion.h" 2>/dev/null || true)
+          "$BDIR/src/common/GetDPVersion.h" 2>/dev/null || true)
 VERSION=${VERSION:-unknown}
 
 MKLVER=""

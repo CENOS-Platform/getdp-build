@@ -74,7 +74,7 @@ if [ -x "$EXE" ]; then
   # The runtime DLL list depends on which features this build enabled, so it is
   # generated from the build rather than kept in sync by hand. The file is
   # written beside getdp.exe so it ships with the binary.
-  MD=$(./scripts/gen_linked_libs.sh)
+  MD=$(./scripts/gen_linked_libs.sh "$BUILDDIR")
   echo "Runtime DLLs (must be on PATH, or beside getdp.exe):"
   echo "  mkl_rt.2.dll  mkl_core.2.dll  mkl_intel_thread.2.dll  libiomp5md.dll"
   echo "  mkl_def.2.dll  mkl_avx2.2.dll  mkl_avx512.2.dll  mkl_mc3.2.dll"
