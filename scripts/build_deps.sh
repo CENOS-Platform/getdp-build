@@ -4,10 +4,16 @@ set -e
 ROOT=${ROOT:?set ROOT to the src/ directory}
 CFG="$(cd "$(dirname "$0")/../config" && pwd)"
 export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$PATH
+. "$(dirname "$0")/crt.sh"
 
 if [ ! -f "$ROOT/OpenBLAS/libopenblas.a" ]; then
   echo "== OpenBLAS =="
   cp "$CFG/Makefile.rule" "$ROOT/OpenBLAS/Makefile.rule"
+  # Makefile.rule is read before Makefile.system, which appends to these itself.
+  if [ -n "$CRT_FLAGS" ]; then
+    printf 'CCOMMON_OPT += %s\nFCOMMON_OPT += %s\n' "$CRT_FLAGS" "$CRT_FLAGS" \
+      >> "$ROOT/OpenBLAS/Makefile.rule"
+  fi
   ( cd "$ROOT/OpenBLAS" && make -j"$(nproc)" )
 fi
 
@@ -17,6 +23,7 @@ if [ ! -f "$ROOT/lapack/build/lib/liblapack.a" ]; then
   ( cd "$ROOT/lapack/build" \
     && cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
              -DCMAKE_Fortran_COMPILER=x86_64-w64-mingw32-gfortran \
+             -DCMAKE_C_FLAGS="$CRT_FLAGS" -DCMAKE_Fortran_FLAGS="$CRT_FLAGS" \
              -DBUILD_SHARED_LIBS=OFF -DCBLAS=OFF -DLAPACKE=OFF \
              -DLAPACKE_WITH_TMG=OFF .. \
     && make -j"$(nproc)" )
@@ -30,6 +37,7 @@ if [ ! -f /usr/local/lib/libgmsh.a ]; then
     && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
              -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
              -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+             -DCMAKE_C_FLAGS="$CRT_FLAGS" -DCMAKE_CXX_FLAGS="$CRT_FLAGS" \
              -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
              -DENABLE_BUILD_LIB=1 -DENABLE_BUILD_SHARED=OFF -DENABLE_BUILD_DYNAMIC=OFF \
              -DENABLE_BLAS_LAPACK=1 -DENABLE_OPENMP=1 -DENABLE_PARSER=1 -DENABLE_POST=1 \

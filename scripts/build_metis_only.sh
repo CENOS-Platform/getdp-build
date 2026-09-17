@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -e
 export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$PATH
+. "$(dirname "$0")/crt.sh"
 ROOT=${ROOT:-/cygdrive/d/source/for_getdp_build}
 # METIS source: the same pkg-metis PETSc would download (--download-metis cannot
 # work here, see BUILD.md). Cloned on demand at the tag PETSc 3.21 pins.
@@ -31,7 +32,7 @@ cmake .. -G "Unix Makefiles" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
   -DCMAKE_AR=/usr/bin/ar -DCMAKE_RANLIB=/usr/bin/ranlib \
-  -DCMAKE_C_FLAGS:STRING="-O3 -static -static-libgcc -DUSE_GKREGEX" \
+  -DCMAKE_C_FLAGS:STRING="-O3 -static -static-libgcc -DUSE_GKREGEX $CRT_FLAGS" \
   -DBUILD_SHARED_LIBS:BOOL=OFF -DSHARED=0 \
   -DGKLIB_PATH=../GKlib -DGKRAND=1 -DMATH_LIB=""
 make -j"$(nproc)"

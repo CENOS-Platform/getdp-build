@@ -45,6 +45,9 @@ export ROOT="$(pwd)/src"
 export CMAKE_POLICY_VERSION_MINIMUM=${CMAKE_POLICY_VERSION_MINIMUM:-3.5}
 BUILDDIR=${BUILDDIR:-build}
 
+# Every stage must agree on the C runtime - see scripts/crt.sh for why.
+. ./scripts/crt.sh
+
 : "${MKL:?set MKL to a oneMKL install (see the header of this script)}"
 [ -f "$MKL/lib/mkl_rt.lib" ] || { echo "no $MKL/lib/mkl_rt.lib"; exit 1; }
 [ -d "$MKL/include" ]        || { echo "no $MKL/include"; exit 1; }
@@ -55,6 +58,7 @@ BUILDDIR=${BUILDDIR:-build}
 echo "MKL       : $MKL"
 echo "Python    : ${PY:-<none - test binary only>}"
 echo "cuDSS     : ${CUDSS_DIR:-<none>}"
+echo "C runtime : $CRT ${CRT_FLAGS:+($CRT_FLAGS)}"
 echo "output    : src/cenos-getdp-fork/$BUILDDIR/getdp.exe"
 echo
 
@@ -71,10 +75,6 @@ if [ -x "$EXE" ]; then
     echo "NOTE: built without embedded Python."
   fi
   echo
-  # The runtime DLL list depends on which features this build enabled, so it is
-  # generated from the build rather than kept in sync by hand. The file is
-  # written beside getdp.exe so it ships with the binary.
-  MD=$(./scripts/gen_linked_libs.sh "$BUILDDIR")
   echo "Runtime DLLs (must be on PATH, or beside getdp.exe):"
   echo "  mkl_rt.2.dll  mkl_core.2.dll  mkl_intel_thread.2.dll  libiomp5md.dll"
   echo "  mkl_def.2.dll  mkl_avx2.2.dll  mkl_avx512.2.dll  mkl_mc3.2.dll"
@@ -86,8 +86,15 @@ if [ -x "$EXE" ]; then
     echo "  cudss64_*.dll  cudart64_*.dll  cublas64_*.dll  cublasLt64_*.dll"
   fi
   echo
+  # The runtime DLL list depends on which features this build enabled, so the
+  # shippable version is generated from the build rather than kept in sync by
+  # hand. It is written beside getdp.exe. Not captured in a $(...): its progress
+  # and any error must reach the terminal, and a failure here must not lose the
+  # build - the binary above is already good.
   echo "Full list with versions and licences, ready to ship:"
-  echo "  $MD"
+  if ! ./scripts/gen_linked_libs.sh "$BUILDDIR"; then
+    echo "WARNING: could not generate linked_libs.md - the build itself is fine."
+  fi
 else
   echo "FAILED: no $EXE"; exit 1
 fi

@@ -16,6 +16,7 @@
 # a bare --download-mumps silently reuses any pkg-mumps directory sitting next
 # to PETSC_DIR, which is how 5.4.1 kept coming back.
 set -e
+. "$(dirname "$0")/crt.sh"
 ROOT=${ROOT:-/cygdrive/d/source/for_getdp_build}
 MKL=${MKL:-/cygdrive/d/source/cenos/backend/bin/Library}
 MUMPS_TARBALL=${MUMPS_TARBALL:-https://web.cels.anl.gov/projects/petsc/download/externalpackages/MUMPS_5.6.2.tar.gz}
@@ -53,11 +54,25 @@ rm -rf $PETSC_DIR/$PETSC_ARCH        # stale externalpackages get reused otherwi
   --with-blaslapack-lib=$MKL/lib/mkl_rt.lib \
   --with-mkl_pardiso-include=$MKL/include \
   --with-mkl_pardiso-lib=$MKL/lib/mkl_rt.lib \
-  COPTFLAGS="-O3 -static -static-libgcc -static-libstdc++" \
-  CXXOPTFLAGS="-O3 -static -static-libgcc -static-libstdc++" \
-  FOPTFLAGS="-O3 -static -static-libgfortran"
+  COPTFLAGS="-O3 -static -static-libgcc -static-libstdc++ $CRT_FLAGS" \
+  CXXOPTFLAGS="-O3 -static -static-libgcc -static-libstdc++ $CRT_FLAGS" \
+  FOPTFLAGS="-O3 -static -static-libgfortran $CRT_FLAGS"
 
 make PETSC_DIR=$PETSC_DIR PETSC_ARCH=$PETSC_ARCH all
+
+# PETSc records the toolchain's link line verbatim in petscvariables, and getdp's
+# cmake pulls that straight into its own link line. A -lmsvcrt captured there
+# re-imports the old CRT no matter what -mcrtdll= the driver was given, which is
+# how a UCRT build still ends up with msvcrt.dll in its import table. Rewrite it.
+# Usually a no-op once PETSc is configured with $CRT_FLAGS - kept as a guarantee,
+# because scripts/check_abi.sh is what fails if this is missed.
+if [ "$CRT" = "ucrt" ]; then
+  PV=$PETSC_DIR/$PETSC_ARCH/lib/petsc/conf/petscvariables
+  if grep -q -- "-lmsvcrt" "$PV"; then
+    sed -i "s/-lmsvcrt/-lucrt/g" "$PV"
+    echo "petscvariables: rewrote -lmsvcrt -> -lucrt"
+  fi
+fi
 
 echo "=== solver support in the new arch ==="
 grep -E "PETSC_HAVE_MKL_PARDISO|PETSC_HAVE_MUMPS|PETSC_HAVE_MKL " $PETSC_DIR/$PETSC_ARCH/include/petscconf.h || true

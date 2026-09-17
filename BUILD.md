@@ -205,6 +205,10 @@ Two things that bite on the MKL archs:
 
 - Link **`mkl_rt.lib` only**. The other MKL `.lib`s aren't pure import libraries — they carry
   MSVC objects needing `__security_cookie` / UCRT symbols that mingw's msvcrt lacks.
+  Note what this is really telling you: the toolchain is on a *different C runtime*
+  from everything it links. Using a pure import library dodges the link error; it does
+  not make the runtimes agree. See **C runtime** below — that mismatch is a real bug
+  and the build now targets the UCRT so it does not exist.
 - The MKL **DLLs must be on `PATH` during configure**. PETSc *runs* test programs; if they
   fail to launch it silently concludes "64-bit BLAS indices" and PARDISO refuses to
   configure. The scripts handle this.
@@ -272,7 +276,55 @@ make parser      # before make, from the build dir
 
 ---
 
+## C runtime
+
+Everything this binary talks to is MSVC-built and on the **Universal CRT**:
+`python310.dll`, the eight oneMKL DLLs, `libiomp5md.dll`, the CUDA/cuDSS DLLs.
+The Cygwin mingw-w64 cross-compiler defaults to the old **`msvcrt.dll`** instead.
+
+Nothing complains. The `.lib` files we link (`python310.lib`, `mkl_rt.lib`) are pure
+import libraries - DLL thunks, no CRT symbols - so the link is clean either way. The
+mismatch only shows up at run time, when a CRT-owned object crosses the boundary.
+
+It did. `Python[...]{"script.py"}` makes GetDP `fopen()` the script and hand the
+`FILE*` to `PyRun_SimpleFile()` inside `python310.dll`. An msvcrt `FILE*` means nothing
+to ucrtbase's stdio, so getdp.exe segfaulted with no message at all - and shipped that
+way, because `getdp.exe -info` starts perfectly well. The same hazard covers file
+descriptors, `malloc` here / `free` there, `errno` and locale state.
+
+So every stage is built with `-D_UCRT -mcrtdll=ucrt` (`scripts/crt.sh`). `-mcrtdll=`
+swaps `-lmsvcrt` for `-lucrt` in gcc's own link spec - see the `*libgcc:` entry in
+`x86_64-w64-mingw32-gcc -dumpspecs` - and it works for gcc, g++ and gfortran. It has to
+be **every** stage: the whole static stack ends up inside getdp.exe, so one stage left
+on msvcrt puts msvcrt.dll back in the import table.
+
+Two things that are easy to miss:
+
+- **PETSc records the link line verbatim.** `petscvariables` keeps whatever `-lmsvcrt`
+  was captured at configure time, and getdp's cmake pulls that into its own link line,
+  re-importing msvcrt whatever the driver was told. `build_mkl_petsc.sh` rewrites it.
+- **`-lucrt` alone is not enough.** On this toolchain the gcc spec still appends
+  `-lmsvcrt`, so you get *both*, with the split falling across `calloc`/`free`. That is
+  worse than either one. Use `-mcrtdll=ucrt`, which replaces it.
+
+`CRT=msvcrt ./build.sh` restores the old behaviour for comparison. Do not ship it -
+`scripts/check_abi.sh` rejects it.
+
 ## 8. Smoke test
+
+`build.sh` runs these two automatically at the end of `build_getdp_arch.sh`, and
+**fails the build** if either does:
+
+```bash
+./scripts/check_abi.sh  <build-dir>/getdp.exe   # import table: one CRT, and it is the UCRT
+./scripts/smoke_python.sh <build-dir>/getdp.exe # both Python[] forms, one triangle, ~0.1 s
+```
+
+`check_abi.sh` also enforces the `-static` invariant that used to be documented in prose
+and never checked. `smoke_python.sh` exists because `-info` does not touch the embedded
+interpreter - a build whose `Python[]{"file.py"}` path segfaults passes `-info` happily.
+
+By hand:
 
 ```bash
 ./getdp.exe -info                     # version + PETSc line

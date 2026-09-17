@@ -15,6 +15,8 @@
 # links two BLAS implementations.
 set -e
 export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$PATH
+SCRIPTS=$(cd "$(dirname "$0")" && pwd)   # resolve before any cd
+. "$SCRIPTS/crt.sh"
 ROOT=${ROOT:?set ROOT to the sources directory}
 export PETSC_DIR=$ROOT/petsc
 export PETSC_ARCH=${1:?arch}
@@ -90,6 +92,7 @@ rm -rf "$BUILDDIR"; mkdir -p "$BUILDDIR"; cd "$BUILDDIR"
 cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
       -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
       -DCMAKE_Fortran_COMPILER=x86_64-w64-mingw32-gfortran \
+      -DCMAKE_C_FLAGS="$CRT_FLAGS" -DCMAKE_CXX_FLAGS="$CRT_FLAGS" -DCMAKE_Fortran_FLAGS="$CRT_FLAGS" \
       -DENABLE_MPI=0 -DENABLE_BLAS_LAPACK=1 -DENABLE_OPENMP=1 -DENABLE_PETSC=1 \
       -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release \
       -DBLAS_LAPACK_LIBRARIES="$BLASLIBS" \
@@ -97,12 +100,15 @@ cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
       -DGETDP_RELEASE=1 \
       "${OPTS[@]}" ..
 make -j"$(nproc)"
-# Smoke test. The binary needs its DLLs at runtime - python310.dll from $PY and
-# mkl_rt.2.dll from the MKL install - so put them on PATH here rather than
-# reporting a link success that cannot actually start.
+# Checks. `getdp.exe -info` only proves the binary loads its DLLs - it passed for
+# months on a build whose Python[...]{"script.py"} path segfaulted on first call.
+# So: start it, assert the import table, then actually run the interpreter.
+# The binary needs its DLLs to do any of that - python310.dll from $PY and
+# mkl_rt.2.dll from the MKL install - so put them on PATH first.
 RUNPATH="$PATH"
 if [ -n "${MKL:-}" ]; then RUNPATH="$MKL/bin:$(dirname "$MKL"):$RUNPATH"; fi
 if [ -n "${PY:-}" ]; then RUNPATH="$PY:$RUNPATH"; fi
+
 if out=$(PATH="$RUNPATH" ./getdp.exe -info 2>&1); then
   echo "$out" | head -3
 else
@@ -110,4 +116,9 @@ else
   echo "WARNING: getdp.exe built but would not start."
   echo "  It needs python310.dll (from PY) and mkl_rt.2.dll (from MKL) on PATH."
   echo "  The link itself is fine - this is a runtime DLL search issue."
+fi
+
+"$SCRIPTS/check_abi.sh" ./getdp.exe
+if [ -n "${PY:-}" ]; then
+  PATH="$RUNPATH" "$SCRIPTS/smoke_python.sh" ./getdp.exe
 fi

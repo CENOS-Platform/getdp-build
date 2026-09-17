@@ -27,6 +27,10 @@ OUT="$BDIR/linked_libs.md"
 EXE="$BDIR/getdp.exe"
 
 # --- facts about this build -------------------------------------------------
+# Progress goes to stderr: this step reads headers and runs git/objdump, and a
+# silent pause here used to look like the build had died.
+say() { echo "  $*" >&2; }
+say "generating linked_libs.md ..."
 
 VERSION=$(sed -n 's/^#define GETDP_VERSION  *"\(.*\)"/\1/p' \
           "$BDIR/src/common/GetDPVersion.h" 2>/dev/null || true)
@@ -53,7 +57,7 @@ if [ -n "${CUDSS_DIR:-}" ] && [ -f "$CUDSS_DIR/include/cudss.h" ]; then
   [ -n "$a" ] && CUDSSVER=" $a.$b.$c"
 fi
 
-ver() { git -C "$ROOT/$1" describe --tags --always --dirty 2>/dev/null || echo "unknown"; }
+ver() { say "  version of $1"; git -C "$ROOT/$1" describe --tags --always 2>/dev/null || echo "unknown"; }
 
 # --- write ------------------------------------------------------------------
 
@@ -145,6 +149,7 @@ fi
 # dynamically by mkl_rt and deliberately do not appear here.
 OBJDUMP=$(command -v x86_64-w64-mingw32-objdump || command -v objdump || true)
 if [ -n "$OBJDUMP" ] && [ -f "$EXE" ]; then
+  say "reading import table with $(basename "$OBJDUMP")"
   imports=$("$OBJDUMP" -p "$EXE" 2>/dev/null | sed -n 's/^\tDLL Name: //p' | sort -u)
   if [ -n "$imports" ]; then
     echo
