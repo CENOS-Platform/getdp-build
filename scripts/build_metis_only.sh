@@ -13,7 +13,7 @@ OLD=$ROOT/petsc/complex_mumps_metis/externalpackages/git.metis
 PREFIX=$ROOT/metis-mingw
 
 if [ -f "$PREFIX/lib/libmetis.a" ] && [ -z "${FORCE:-}" ]; then
-  echo "METIS already built ($PREFIX/lib/libmetis.a) - skipping. FORCE=1 to rebuild."
+  crt_require "$PREFIX/lib/libmetis.a" METIS
   exit 0
 fi
 
@@ -37,6 +37,7 @@ cmake .. -G "Unix Makefiles" \
   -DGKLIB_PATH=../GKlib -DGKRAND=1 -DMATH_LIB=""
 make -j"$(nproc)"
 make install
+crt_record "$PREFIX/lib/libmetis.a"
 echo "=== installed ==="
 ls -la $PREFIX/lib $PREFIX/include 2>/dev/null
 echo "METIS_ONLY_BUILD_DONE"

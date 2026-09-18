@@ -10,6 +10,9 @@
 # PATH must already carry python310.dll and the MKL DLLs; the caller sets that up.
 set -e
 EXE=${1:?usage: smoke_python.sh <getdp.exe>}
+[ -f "$EXE" ] || { echo "smoke_python: no such file: $EXE" >&2; exit 1; }
+# absolute: the test runs from a temp dir, so a relative path would not survive
+EXE=$(cd "$(dirname "$EXE")" && pwd)/$(basename "$EXE")
 HERE=$(cd "$(dirname "$0")/../tests/python_smoke" && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT

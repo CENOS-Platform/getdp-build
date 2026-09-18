@@ -49,6 +49,8 @@ MKL=$C/Library PY=$C ./build.sh             # shippable binary, embedded Python
 | `PYLIB` | no | default `python310.lib` |
 | `CUDSS_DIR` + `CUDA_TOOLKIT_DIR` | no | GPU direct solve (step 9) |
 | `BUILDDIR` | no | default `build` |
+| `CRT` | no | C runtime for every stage, default `ucrt`. `msvcrt` is for comparison only and is rejected by `check_abi.sh` |
+| `FORCE` | no | clean and rebuild every stage instead of skipping the ones already built. Needed after a `CRT` change |
 
 So a full CENOS install is *not* required — point `MKL` at any oneMKL and `PY` at any
 CPython, or omit `PY` entirely.
@@ -310,6 +312,79 @@ Two things that are easy to miss:
 `CRT=msvcrt ./build.sh` restores the old behaviour for comparison. Do not ship it -
 `scripts/check_abi.sh` rejects it.
 
+### How a hybrid shipped anyway, and the three things that now stop it
+
+A binary went out with `-mcrtdll=ucrt` in effect and `msvcrt.dll` still in its import
+table: `fopen`, `malloc`, `free`, `__iob_func` bound to msvcrt while python310.dll used
+the UCRT. `Python[...]{"pid_helper.py"}` segfaulted exactly as before. One `-lmsvcrt`
+token was enough, and it came from a **resumed build**: PETSc was already built, the
+stage skipped, and the rewrite of `petscvariables` sat on the *other* side of that skip.
+
+So the runtime is now enforced in three places, cheapest first:
+
+1. **Every cached stage is stamped** (`.crt-stamp` beside its artifact). A stage that is
+   about to skip work compares the stamp with the CRT being built and **stops the build**
+   if they differ - including an unstamped artifact, which predates the switch and is
+   therefore msvcrt. This fails in seconds rather than after an hour of building.
+
+   ```
+   FAILED: PETSc complex_mkl_metis was built with CRT=msvcrt, but this build is CRT=ucrt.
+     Rebuild every stage with the current runtime:
+         FORCE=1 CRT=ucrt ./build.sh
+   ```
+
+   `FORCE=1` is the answer to all of these. It cleans and recompiles each stage rather
+   than relinking it: the objects under an artifact carry the other runtime's headers, so
+   deleting the `.a` by hand is not enough.
+
+2. **`petscvariables` is rewritten on both paths** - fresh build *and* skip - and in all
+   three locations getdp's cmake looks at (`PETSC_POSSIBLE_CONF_FILES` in the fork's
+   `CMakeLists.txt`).
+
+3. **The generated link line is checked** right after `cmake` and before `make`
+   (`CMakeFiles/getdp.dir/link.txt`). That file is where every contributor - the driver's
+   spec, PETSc's captured libraries, a stale cache - finally meets, so a `-lmsvcrt`
+   surviving to that point is rewritten there and reported loudly.
+
+`check_abi.sh` remains the gate, and now names the symbols that came from the wrong CRT,
+which usually identifies the stale stage:
+
+```
+check_abi: FAIL - 164 symbols bound to msvcrt.dll, including: __iob_func _errno
+                  _fdopen _fileno calloc fclose fopen fread free fwrite malloc realloc
+```
+
+### Checking a binary someone handed you
+
+Both checks work on any getdp.exe, not just a fresh build - useful before shipping
+a binary you did not build yourself:
+
+```bash
+C=/cygdrive/d/source/cenos/backend/bin          # a CENOS install, for the DLLs
+PATH="$C:$C/Library/bin:$PATH" \
+  ./scripts/check_abi.sh    /cygdrive/c/path/to/getdp.exe
+PATH="$C:$C/Library/bin:$PATH" \
+  ./scripts/smoke_python.sh /cygdrive/c/path/to/getdp.exe
+```
+
+### `Warning: corrupt .drectve at end of def file`
+
+Three of these at link time are expected and harmless. They come from NVIDIA's
+`cudart.lib`, which in the CUDA 13 pip wheel is the **static** CUDA runtime, not an
+import library - its members are MSVC objects (`_out/wddm2_amd64_release/*.obj`) and 12
+of them carry a `.drectve` section of MSVC linker directives that GNU ld only parses
+loosely. One warning per member actually pulled in.
+
+```bash
+# the other three .libs have none; only cudart.lib does
+objdump -h "$CUDSS_DIR/lib/x64/cudart.lib" | grep -c '\.drectve'
+```
+
+This is also why `cudart64_*.dll` is absent from the import table while `cudss64_0.dll`
+is there: cudart is linked in, cuDSS is not. Nothing to fix - do not try to replace
+NVIDIA's library with a `dlltool`-generated import lib to silence it, the static
+objects are doing real work.
+
 ## 8. Smoke test
 
 `build.sh` runs these two automatically at the end of `build_getdp_arch.sh`, and
@@ -318,6 +393,7 @@ Two things that are easy to miss:
 ```bash
 ./scripts/check_abi.sh  <build-dir>/getdp.exe   # import table: one CRT, and it is the UCRT
 ./scripts/smoke_python.sh <build-dir>/getdp.exe # both Python[] forms, one triangle, ~0.1 s
+./scripts/test_cudss_host.sh                    # cuDSS host logic, only when CUDSS_DIR is set
 ```
 
 `check_abi.sh` also enforces the `-static` invariant that used to be documented in prose
@@ -384,6 +460,39 @@ symbols that mingw doesn't define. The stub supplies them — needed by any ming
 
 Falls back to the CPU solver automatically if no GPU/driver is present.
 
+### What the wrapper does with the matrix
+
+`src/kernel/LinAlg_CUDSS.cpp` is not a one-shot `cudssExecute()`; two things in it exist
+because of what a benchmark against MKL PARDISO showed, and both change what the GPU is
+asked to do:
+
+- **Half the matrix.** Time-harmonic eddy-current systems are complex *symmetric*
+  (`A == Aᵀ`, not Hermitian), so only the upper triangle is uploaded, as
+  `CUDSS_MTYPE_SYMMETRIC` / `CUDSS_MVIEW_UPPER`. That is about half the factor storage and
+  half the flops of the LU a general matrix gets. The storage mattered most: the largest
+  measured case wanted ~19 GB of factor on a 16 GB card, and WDDM pages the overflow to
+  host memory instead of failing — one solve went from 31 s to 465 s. Symmetry is
+  **detected, never assumed**: the structure is checked when a pattern is first seen, the
+  values are re-checked every solve, and anything that does not hold up falls back to the
+  general path on its own.
+- **One analysis per system, not per solve.** The handle, the descriptors, the device
+  buffers and `CUDSS_PHASE_ANALYSIS` are retained and reused while the sparsity pattern is
+  unchanged, which is the whole of a nonlinear loop. Previously every call redid the
+  reordering — host-side work, ~0.5–0.9 s per solve on the smallest case — while PETSc's
+  own path was reusing its symbolic factorization across the same loop. A new pattern
+  releases the old context first, so only one system's factor is ever resident.
+
+Neither can turn a wrong answer into an accepted one: `_cudssTrySolve()` in
+`LinAlg_PETSC.cpp` still checks `‖Ax−b‖` against the original full matrix on every solve
+and falls back to the CPU if it does not hold.
+
+The host half of that — the triangle map and the symmetry check — is unit-tested without a
+GPU, and `build_getdp_arch.sh` runs it on any build with `CUDSS_DIR` set:
+
+```bash
+CUDSS_DIR=$NV CUDA_TOOLKIT_DIR=$NV ./scripts/test_cudss_host.sh
+```
+
 ## Resuming after a failed stage
 
 Every stage is guarded by a sentinel file, so re-running `./build.sh` picks up where it
@@ -391,11 +500,18 @@ stopped — nothing already built is redone:
 
 | stage | skipped when this exists | rebuild anyway |
 |---|---|---|
-| OpenBLAS | `src/OpenBLAS/libopenblas.a` | delete it |
-| LAPACK | `src/lapack/build/lib/liblapack.a` | delete it |
-| gmsh | `/usr/local/lib/libgmsh.a` | delete it |
+| OpenBLAS | `src/OpenBLAS/libopenblas.a` | `FORCE=1` |
+| LAPACK | `src/lapack/build/lib/liblapack.a` | `FORCE=1` |
+| gmsh | `/usr/local/lib/libgmsh.a` | `FORCE=1` |
 | METIS | `metis-mingw/lib/libmetis.a` | `FORCE=1` |
 | PETSc | `petsc/complex_mkl_metis/lib/libpetsc.a` | `FORCE=1` |
+
+`FORCE=1` applies to all five and cleans before rebuilding. Deleting an artifact by hand
+also re-runs its stage, but leaves the object files next to it, so it is only safe when
+the flags have not changed - after a CRT switch it is not. See the C runtime section.
+
+A skip is allowed only when the stage's `.crt-stamp` matches the runtime being built;
+otherwise the build stops and says so, instead of quietly producing a mixed binary.
 
 GetDP itself is always rebuilt (`build_getdp_arch.sh` wipes its build dir).
 

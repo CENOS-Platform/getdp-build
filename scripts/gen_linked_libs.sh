@@ -59,6 +59,28 @@ fi
 
 ver() { say "  version of $1"; git -C "$ROOT/$1" describe --tags --always 2>/dev/null || echo "unknown"; }
 
+# Which C runtime the binary ended up importing. Read from the executable, not
+# from the CRT= this build was asked for, because the interesting case is the one
+# where the two disagree: everything getdp.exe loads at run time (python310.dll,
+# the MKL DLLs, cuDSS) is MSVC-built and on the Universal CRT, and a binary that
+# imports msvcrt.dll instead cannot safely pass a FILE* or an allocation to any of
+# them. It belongs in the document that ships beside the binary. See
+# scripts/crt.sh, and scripts/check_abi.sh which fails the build over it.
+OBJDUMP=$(command -v x86_64-w64-mingw32-objdump || command -v objdump || true)
+CRTNOTE=""
+if [ -n "$OBJDUMP" ] && [ -f "$EXE" ]; then
+  say "  C runtime from the import table"
+  crtimp=$("$OBJDUMP" -p "$EXE" 2>/dev/null | sed -n 's/^\tDLL Name: //p' | tr 'A-Z' 'a-z' | sort -u)
+  if echo "$crtimp" | grep -qx "msvcrt.dll"; then
+    CRTNOTE="**C runtime: \`msvcrt.dll\` - WRONG.** Every DLL listed below is on the
+Universal CRT and this binary is not, so \`Python[]{\"file.py\"}\` segfaults on the
+mismatch. Do not ship it: rebuild with \`CRT=ucrt\` (see \`BUILD.md\`, C runtime)."
+  elif echo "$crtimp" | grep -q "^api-ms-win-crt-"; then
+    CRTNOTE="C runtime: the Universal CRT (\`api-ms-win-crt-*.dll\`, i.e. \`ucrtbase\`),
+the same one python310.dll, the MKL DLLs and cuDSS use."
+  fi
+fi
+
 # --- write ------------------------------------------------------------------
 
 {
@@ -71,6 +93,8 @@ Regenerate with \`scripts/gen_linked_libs.sh\`; do not edit by hand.
 \`getdp.exe\` is linked with \`-static\` on the MinGW toolchain, so the compiler
 runtimes and every numerical library built from source are inside the
 executable. The DLLs below are the ones it still needs at run time.
+
+$CRTNOTE
 
 ## Must ship - on PATH, or beside \`getdp.exe\`
 
@@ -144,10 +168,9 @@ DLLs are needed.
 EOF
 fi
 
-# Real import table, when the toolchain's objdump is available. This is the
-# authoritative list of *direct* imports; the MKL kernels above are loaded
-# dynamically by mkl_rt and deliberately do not appear here.
-OBJDUMP=$(command -v x86_64-w64-mingw32-objdump || command -v objdump || true)
+# Real import table, when the toolchain's objdump is available ($OBJDUMP, located
+# above). This is the authoritative list of *direct* imports; the MKL kernels
+# above are loaded dynamically by mkl_rt and deliberately do not appear here.
 if [ -n "$OBJDUMP" ] && [ -f "$EXE" ]; then
   say "reading import table with $(basename "$OBJDUMP")"
   imports=$("$OBJDUMP" -p "$EXE" 2>/dev/null | sed -n 's/^\tDLL Name: //p' | sort -u)

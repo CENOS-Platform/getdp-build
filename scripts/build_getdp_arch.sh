@@ -99,26 +99,63 @@ cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
       -DGMSH_INC=/usr/local/include -DGMSH_LIB=/usr/local/lib/libgmsh.a \
       -DGETDP_RELEASE=1 \
       "${OPTS[@]}" ..
+
+# The link line cmake just generated is the last place the C runtime is decided,
+# and the only one where every contributor - the driver's own spec, the libraries
+# PETSc captured, anything a stale cache carried over - is visible at once. A
+# -lmsvcrt reaching here beats -mcrtdll=ucrt: it is an explicit archive listed
+# ahead of the spec's -lucrt, so fopen binds to msvcrt while python310.dll stays
+# on the UCRT - exactly the split that segfaults Python[...]{"file.py"}. Catch it
+# while it is still one token in a text file.
+LINKTXT=CMakeFiles/getdp.dir/link.txt
+if [ "$CRT" = ucrt ] && [ -f "$LINKTXT" ] && grep -q -- "-lmsvcrt" "$LINKTXT"; then
+  sed -i "s/-lmsvcrt/-lucrt/g" "$LINKTXT"
+  echo "WARNING: cmake's link line still carried -lmsvcrt - rewritten to -lucrt." >&2
+  echo "  Normally PETSc's petscvariables, which build_mkl_petsc.sh already" >&2
+  echo "  rewrites - so a hit here means something else supplied it. Worth a look." >&2
+fi
+
 make -j"$(nproc)"
 # Checks. `getdp.exe -info` only proves the binary loads its DLLs - it passed for
 # months on a build whose Python[...]{"script.py"} path segfaulted on first call.
 # So: start it, assert the import table, then actually run the interpreter.
-# The binary needs its DLLs to do any of that - python310.dll from $PY and
-# mkl_rt.2.dll from the MKL install - so put them on PATH first.
-RUNPATH="$PATH"
-if [ -n "${MKL:-}" ]; then RUNPATH="$MKL/bin:$(dirname "$MKL"):$RUNPATH"; fi
-if [ -n "${PY:-}" ]; then RUNPATH="$PY:$RUNPATH"; fi
+#
+# All three need the binary to actually run, and every dependency this script was
+# given also says where its DLLs live - so build the run PATH from those inputs
+# rather than hoping the caller exported them. cuDSS is the easy one to forget:
+# -DENABLE_CUDSS puts cudss64_*.dll in the import table, and without it on PATH
+# getdp.exe cannot start at all, which degrades every check into "would not start".
+RUNADD=""
+add_run_dir() { [ -d "$1" ] && RUNADD="${RUNADD:+$RUNADD:}$1"; return 0; }
+
+[ -n "${MKL:-}" ] && { add_run_dir "$MKL/bin"; add_run_dir "$(dirname "$MKL")"; }
+[ -n "${PY:-}" ]  && add_run_dir "$PY"
+for d in "${CUDSS_DIR:-}" "${CUDA_TOOLKIT_DIR:-}"; do
+  [ -n "$d" ] || continue
+  add_run_dir "$d/bin"             # cudss64_*.dll, cudss_mtlayer_*.dll
+  add_run_dir "$d/bin/x86_64"      # cudart64_*.dll, cublas64_*.dll, cublasLt64_*.dll
+done
+RUNPATH="${RUNADD:+$RUNADD:}$PATH"
 
 if out=$(PATH="$RUNPATH" ./getdp.exe -info 2>&1); then
   echo "$out" | head -3
 else
   echo "$out" | head -3
-  echo "WARNING: getdp.exe built but would not start."
-  echo "  It needs python310.dll (from PY) and mkl_rt.2.dll (from MKL) on PATH."
-  echo "  The link itself is fine - this is a runtime DLL search issue."
+  echo "FAILED: getdp.exe built but will not start." >&2
+  echo "  searched: $RUNADD" >&2
+  echo "  wants:    $(objdump -p ./getdp.exe | sed -n 's/^\tDLL Name: //p' | sort -u | tr '\n' ' ')" >&2
+  exit 1
 fi
 
 "$SCRIPTS/check_abi.sh" ./getdp.exe
 if [ -n "${PY:-}" ]; then
   PATH="$RUNPATH" "$SCRIPTS/smoke_python.sh" ./getdp.exe
+fi
+# Unlike the two above, this one tests source logic rather than the binary: the
+# host side of the cuDSS path decides whether the GPU is handed the upper
+# triangle of a symmetric matrix or the whole thing, and gets no coverage from
+# any run on a machine without an NVIDIA card. Cheap, so it runs on every build
+# that has cuDSS in it.
+if [ -n "${CUDSS_DIR:-}" ]; then
+  "$SCRIPTS/test_cudss_host.sh"
 fi

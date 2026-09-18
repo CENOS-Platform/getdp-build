@@ -26,10 +26,37 @@ export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$MKL/bin:$(dirname "$MKL"
 export PETSC_DIR=$ROOT/petsc
 export PETSC_ARCH=complex_mkl_metis
 
+# PETSc records the toolchain's link line verbatim in petscvariables, getdp's
+# cmake greps PACKAGES_LIBS / PETSC_EXTERNAL_LIB_BASIC / PCC_LINKER_LIBS out of it
+# (see PETSC_POSSIBLE_CONF_FILES in the fork's CMakeLists.txt) and appends them to
+# its own link line. The -lmsvcrt captured there then re-imports the old CRT
+# however the driver was invoked - that single token is what put msvcrt.dll in a
+# shipped UCRT binary, with fopen coming from msvcrt and Python's stdio from the
+# UCRT.
+#
+# All three paths cmake looks at are rewritten, because it uses whichever exists.
+#
+# This MUST also run on the skip path below. A PETSc built before the CRT switch
+# is the normal case on a resumed build, and it is precisely the one that carries
+# a stale -lmsvcrt - skipping the rewrite there is how the hybrid comes back.
+sanitize_petscvariables() {
+  [ "$CRT" = "ucrt" ] || return 0
+  local pv
+  for pv in "$PETSC_DIR/$PETSC_ARCH/conf/petscvariables" \
+            "$PETSC_DIR/$PETSC_ARCH/lib/petsc-conf/petscvariables" \
+            "$PETSC_DIR/$PETSC_ARCH/lib/petsc/conf/petscvariables"; do
+    [ -f "$pv" ] || continue
+    grep -q -- "-lmsvcrt" "$pv" || continue
+    sed -i "s/-lmsvcrt/-lucrt/g" "$pv"
+    echo "petscvariables: rewrote -lmsvcrt -> -lucrt in ${pv#$PETSC_DIR/} (CRT=$CRT)"
+  done
+}
+
 # PETSc takes ~30 min and the configure below wipes $PETSC_ARCH, so never redo it
 # implicitly on a resumed build.
 if [ -f "$PETSC_DIR/$PETSC_ARCH/lib/libpetsc.a" ] && [ -z "${FORCE:-}" ]; then
-  echo "PETSc $PETSC_ARCH already built - skipping. FORCE=1 to rebuild."
+  crt_require "$PETSC_DIR/$PETSC_ARCH/lib/libpetsc.a" "PETSc $PETSC_ARCH"
+  sanitize_petscvariables
   exit 0
 fi
 cd $PETSC_DIR
@@ -60,19 +87,8 @@ rm -rf $PETSC_DIR/$PETSC_ARCH        # stale externalpackages get reused otherwi
 
 make PETSC_DIR=$PETSC_DIR PETSC_ARCH=$PETSC_ARCH all
 
-# PETSc records the toolchain's link line verbatim in petscvariables, and getdp's
-# cmake pulls that straight into its own link line. A -lmsvcrt captured there
-# re-imports the old CRT no matter what -mcrtdll= the driver was given, which is
-# how a UCRT build still ends up with msvcrt.dll in its import table. Rewrite it.
-# Usually a no-op once PETSc is configured with $CRT_FLAGS - kept as a guarantee,
-# because scripts/check_abi.sh is what fails if this is missed.
-if [ "$CRT" = "ucrt" ]; then
-  PV=$PETSC_DIR/$PETSC_ARCH/lib/petsc/conf/petscvariables
-  if grep -q -- "-lmsvcrt" "$PV"; then
-    sed -i "s/-lmsvcrt/-lucrt/g" "$PV"
-    echo "petscvariables: rewrote -lmsvcrt -> -lucrt"
-  fi
-fi
+crt_record "$PETSC_DIR/$PETSC_ARCH/lib/libpetsc.a"
+sanitize_petscvariables
 
 echo "=== solver support in the new arch ==="
 grep -E "PETSC_HAVE_MKL_PARDISO|PETSC_HAVE_MUMPS|PETSC_HAVE_MKL " $PETSC_DIR/$PETSC_ARCH/include/petscconf.h || true

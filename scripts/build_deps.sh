@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# OpenBLAS + LAPACK + gmsh. Skips anything already built.
+# OpenBLAS + LAPACK + gmsh. Skips anything already built with the current C
+# runtime; FORCE=1 cleans and rebuilds all three (see scripts/crt.sh).
 set -e
 ROOT=${ROOT:?set ROOT to the src/ directory}
 CFG="$(cd "$(dirname "$0")/../config" && pwd)"
 export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$PATH
 . "$(dirname "$0")/crt.sh"
 
-if [ ! -f "$ROOT/OpenBLAS/libopenblas.a" ]; then
+BLAS_A="$ROOT/OpenBLAS/libopenblas.a"
+if [ -f "$BLAS_A" ] && [ -z "${FORCE:-}" ]; then
+  crt_require "$BLAS_A" OpenBLAS
+else
   echo "== OpenBLAS =="
+  # Recompile, don't relink: a rebuild here means either FORCE or a CRT switch,
+  # and the objects already on disk were compiled with the other runtime's
+  # headers. OpenBLAS keeps them in the source tree, so nothing else clears them.
+  ( cd "$ROOT/OpenBLAS" && make clean >/dev/null 2>&1 ) || true
   cp "$CFG/Makefile.rule" "$ROOT/OpenBLAS/Makefile.rule"
   # Makefile.rule is read before Makefile.system, which appends to these itself.
   if [ -n "$CRT_FLAGS" ]; then
@@ -15,10 +23,15 @@ if [ ! -f "$ROOT/OpenBLAS/libopenblas.a" ]; then
       >> "$ROOT/OpenBLAS/Makefile.rule"
   fi
   ( cd "$ROOT/OpenBLAS" && make -j"$(nproc)" )
+  crt_record "$BLAS_A"
 fi
 
-if [ ! -f "$ROOT/lapack/build/lib/liblapack.a" ]; then
+LAPACK_A="$ROOT/lapack/build/lib/liblapack.a"
+if [ -f "$LAPACK_A" ] && [ -z "${FORCE:-}" ]; then
+  crt_require "$LAPACK_A" LAPACK
+else
   echo "== LAPACK =="
+  rm -rf "$ROOT/lapack/build"   # stale objects and a cached CMAKE_C_FLAGS
   mkdir -p "$ROOT/lapack/build"
   ( cd "$ROOT/lapack/build" \
     && cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
@@ -27,9 +40,13 @@ if [ ! -f "$ROOT/lapack/build/lib/liblapack.a" ]; then
              -DBUILD_SHARED_LIBS=OFF -DCBLAS=OFF -DLAPACKE=OFF \
              -DLAPACKE_WITH_TMG=OFF .. \
     && make -j"$(nproc)" )
+  crt_record "$LAPACK_A"
 fi
 
-if [ ! -f /usr/local/lib/libgmsh.a ]; then
+GMSH_A=/usr/local/lib/libgmsh.a
+if [ -f "$GMSH_A" ] && [ -z "${FORCE:-}" ]; then
+  crt_require "$GMSH_A" gmsh
+else
   echo "== gmsh =="
   rm -rf "$ROOT/gmsh/build"   # a failed configure leaves a stale cache
   mkdir -p "$ROOT/gmsh/build"
@@ -48,5 +65,6 @@ if [ ! -f /usr/local/lib/libgmsh.a ]; then
              -DENABLE_METIS=OFF -DENABLE_NETGEN=OFF -DENABLE_TESTS=OFF -DENABLE_EIGEN=0 \
              -DENABLE_WRAP_PYTHON=OFF .. \
     && make -j"$(nproc)" && make install )
+  crt_record "$GMSH_A"
 fi
 echo "deps ready"

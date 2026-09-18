@@ -65,7 +65,11 @@ echo
 ./scripts/build_deps.sh                     # OpenBLAS, LAPACK, gmsh
 ./scripts/build_metis_only.sh               # METIS
 ./scripts/build_mkl_petsc.sh                # PETSc arch complex_mkl_metis
-./scripts/build_getdp_arch.sh complex_mkl_metis "$BUILDDIR" "$MKL/lib/mkl_rt.lib"
+# Don't abort on a failed check here. The binary exists either way, and the report
+# below - the import table in particular - is exactly what you need to diagnose the
+# failure. The exit status is carried to the end of the script.
+arch_rc=0
+./scripts/build_getdp_arch.sh complex_mkl_metis "$BUILDDIR" "$MKL/lib/mkl_rt.lib" || arch_rc=$?
 
 EXE="$ROOT/cenos-getdp-fork/$BUILDDIR/getdp.exe"
 echo
@@ -97,4 +101,10 @@ if [ -x "$EXE" ]; then
   fi
 else
   echo "FAILED: no $EXE"; exit 1
+fi
+
+if [ "$arch_rc" -ne 0 ]; then
+  echo
+  echo "FAILED: a post-build check rejected this binary (see above). Do not ship it."
+  exit "$arch_rc"
 fi
