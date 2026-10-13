@@ -85,6 +85,13 @@ rm -rf $PETSC_DIR/$PETSC_ARCH        # stale externalpackages get reused otherwi
   CXXOPTFLAGS="-O3 -static -static-libgcc -static-libstdc++ $CRT_FLAGS" \
   FOPTFLAGS="-O3 -static -static-libgfortran $CRT_FLAGS"
 
+# PETSc probes _set_output_format by linking alone, and mingw's libucrt provides
+# it, but newer mingw-w64 headers (seen with 14.0) hide _TWO_DIGIT_EXPONENT under _UCRT, so
+# pinit.c fails to compile. The call is moot there: UCRT already prints two-digit exponents.
+if [ "$CRT" = "ucrt" ]; then
+  sed -i '/#define PETSC_HAVE__SET_OUTPUT_FORMAT/d' "$PETSC_DIR/$PETSC_ARCH/include/petscconf.h"
+fi
+
 make PETSC_DIR=$PETSC_DIR PETSC_ARCH=$PETSC_ARCH all
 
 crt_record "$PETSC_DIR/$PETSC_ARCH/lib/libpetsc.a"
