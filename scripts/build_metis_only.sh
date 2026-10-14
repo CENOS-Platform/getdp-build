@@ -2,7 +2,11 @@
 set -e
 export PATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin:$PATH
 . "$(dirname "$0")/crt.sh"
-ROOT=${ROOT:-/cygdrive/d/source/for_getdp_build}
+# build.sh exports ROOT; keep this script runnable on its own by falling back to
+# this repo's own src/ rather than to one machine's scratch directory, which is
+# what the old default was.
+ROOT=${ROOT:-$(cd "$(dirname "$0")/../src" 2>/dev/null && pwd)}
+[ -n "$ROOT" ] || { echo "$0: cannot locate src/ - set ROOT" >&2; exit 1; }
 # METIS source: the same pkg-metis PETSc would download (--download-metis cannot
 # work here, see BUILD.md). Cloned on demand at the tag PETSc 3.21 pins.
 METIS_TAG=${METIS_TAG:-v5.1.0-p12}

@@ -52,6 +52,28 @@ MKL=$C/Library PY=$C ./build.sh             # shippable binary, embedded Python
 | `CRT` | no | C runtime for every stage, default `ucrt`. `msvcrt` is for comparison only and is rejected by `check_abi.sh` |
 | `FORCE` | no | clean and rebuild every stage instead of skipping the ones already built. Needed after a `CRT` change |
 
+### Versions and tags
+
+The version is `<x.y.z>-cenos.N+<metadata>`, for example `4.0.0-cenos.2+py310`.
+
+- `N` is in the file `CENOS_REVISION`.
+- The metadata after `+` says what the binary links: `py310` for the embedded Python, `cu13` for cuDSS.
+- Each release has a tag `getdp-<x.y.z>-cenos.N` in this repository. The tagged commit pins the
+  fork and every other source, so the version tells exactly what was built.
+
+`build.sh` prints the tag to add. Build from a clean commit with the submodules at their recorded
+commits, otherwise the tag does not describe the binary. To release:
+
+```bash
+# submodules updated and committed, CENOS_REVISION increased
+git tag getdp-4.0.0-cenos.2
+git push origin getdp-4.0.0-cenos.2
+MKL=$C/Library PY=$C ./build.sh
+```
+
+Upload the build as `getdp-<version>.zip` with one top-level folder `getdp-<version>/`, for
+example `getdp-4.0.0-cenos.2+py310/getdp.exe`. CENOS downloads it by that name.
+
 So a full CENOS install is *not* required — point `MKL` at any oneMKL and `PY` at any
 CPython, or omit `PY` entirely.
 
@@ -266,7 +288,7 @@ cmake -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
       -DENABLE_PYTHON=1 \
       -DPYTHON_INCLUDE_DIR=/cygdrive/d/source/cenos/backend/bin/include \
       -DPYTHON_LIBRARY=/cygdrive/d/source/cenos/backend/bin/libs/python310.lib \
-      -DGETDP_RELEASE=1 -DGETDP_EXTRA_VERSION="+cenos.py310.1" ..
+      -DGETDP_RELEASE=1 -DGETDP_EXTRA_VERSION="-cenos.2" -DGETDP_BUILD_METADATA=py310 ..
 make -j"$(nproc)"
 ```
 

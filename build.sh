@@ -25,6 +25,16 @@
 #
 #   BUILDDIR=<name>         optional, default "build"
 #
+# ---- version -----------------------------------------------------------------
+#
+# The version is <x.y.z>-cenos.N+<metadata>, e.g. 4.0.0-cenos.2+py310.
+# N is in the file CENOS_REVISION. Tag the commit you build from with
+# getdp-<x.y.z>-cenos.N, so the version tells which sources were built.
+# To make a new release:
+#   1. update the submodules, increase CENOS_REVISION, commit
+#   2. git tag getdp-4.0.0-cenos.N && git push origin getdp-4.0.0-cenos.N
+#   3. run this script
+#
 # Examples
 #   # test binary, no Python, MKL from a standalone oneMKL
 #   MKL=/cygdrive/c/oneMKL/latest ./build.sh
@@ -55,6 +65,14 @@ BUILDDIR=${BUILDDIR:-build}
 
 ./scripts/fix_eol.sh                        # CRLF submodule checkout -> LF
 
+REV=$(tr -d '[:space:]' < CENOS_REVISION)
+case "$REV" in ''|*[!0-9]*) echo "CENOS_REVISION must contain one number, got '$REV'"; exit 1 ;; esac
+fork_version() { sed -n "s/^set(GETDP_$1_VERSION \([0-9]*\))/\1/p" src/cenos-getdp-fork/CMakeLists.txt; }
+RELEASE_VERSION="$(fork_version MAJOR).$(fork_version MINOR).$(fork_version PATCH)-cenos.$REV"
+TAG="getdp-$RELEASE_VERSION"
+export GETDP_EXTRA_VERSION="-cenos.$REV"
+
+echo "version   : $RELEASE_VERSION (tag this commit: $TAG)"
 echo "MKL       : $MKL"
 echo "Python    : ${PY:-<none - test binary only>}"
 echo "cuDSS     : ${CUDSS_DIR:-<none>}"
@@ -108,3 +126,7 @@ if [ "$arch_rc" -ne 0 ]; then
   echo "FAILED: a post-build check rejected this binary (see above). Do not ship it."
   exit "$arch_rc"
 fi
+
+echo
+echo "Before shipping $RELEASE_VERSION, tag the commit it was built from:"
+echo "  git tag $TAG && git push origin $TAG"

@@ -70,11 +70,18 @@ crt_require() {
     fi
     echo "  artifact: $artifact"
     echo
-    echo "  These cannot be mixed - see scripts/crt.sh. The stage must be compiled"
-    echo "  again, not just relinked, so removing the artifact by hand is not enough."
+    echo "  These cannot be mixed - see scripts/crt.sh. The stage has to be"
+    echo "  compiled again, not just relinked: its object files carry the other"
+    echo "  runtime's headers."
     echo
-    echo "  Rebuild every stage with the current runtime:"
+    echo "  Rebuild every stage with the current runtime (hours - PETSc and MUMPS"
+    echo "  are in there, and MUMPS is downloaded):"
     echo "      FORCE=1 CRT=$CRT ./build.sh"
+    echo
+    echo "  Or just this one, keeping stages already rebuilt: delete the artifact"
+    echo "  and run the same build again. Every stage wipes its own build tree"
+    echo "  before rebuilding, so nothing compiled with the old runtime survives."
+    echo "      rm -rf $artifact"
     echo
   } >&2
   exit 1

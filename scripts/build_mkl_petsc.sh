@@ -17,7 +17,11 @@
 # to PETSC_DIR, which is how 5.4.1 kept coming back.
 set -e
 . "$(dirname "$0")/crt.sh"
-ROOT=${ROOT:-/cygdrive/d/source/for_getdp_build}
+# build.sh exports ROOT; keep this script runnable on its own by falling back to
+# this repo's own src/ rather than to one machine's scratch directory, which is
+# what the old default was.
+ROOT=${ROOT:-$(cd "$(dirname "$0")/../src" 2>/dev/null && pwd)}
+[ -n "$ROOT" ] || { echo "$0: cannot locate src/ - set ROOT" >&2; exit 1; }
 MKL=${MKL:-/cygdrive/d/source/cenos/backend/bin/Library}
 MUMPS_TARBALL=${MUMPS_TARBALL:-https://web.cels.anl.gov/projects/petsc/download/externalpackages/MUMPS_5.6.2.tar.gz}
 # MKL DLLs must be on PATH during configure (PETSc runs test programs). They live

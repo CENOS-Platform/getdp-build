@@ -7,9 +7,9 @@
 #   PYLIB=<file>            default python310.lib
 #   CUDSS_DIR=<dir>         NVIDIA cuDSS install  -> GPU direct solve
 #   CUDA_TOOLKIT_DIR=<dir>  required when CUDSS_DIR is set
-#   BUILD_METADATA=<string> override the auto-derived "+" metadata (py310.cu13.g<hash>)
-#   GETDP_EXTRA_VERSION=<s> override the whole version suffix; normally left unset
-#                           so the fork's own -cenos.N tag is used
+#   BUILD_METADATA=<string> override the auto-derived "+" metadata (py310.cu13)
+#   GETDP_EXTRA_VERSION=<s> version suffix, e.g. -cenos.2. build.sh sets it from
+#                           CENOS_REVISION; if unset, the fork's own -cenos.N is used
 #
 # <blas-libs> must match the BLAS the arch was configured with, or the binary
 # links two BLAS implementations.
@@ -44,11 +44,11 @@ else
 fi
 
 # Version build metadata - the part after "+" in e.g.
-#   4.0.0-cenos.1+py310.cu13.g9622b0d
-# The fork's CMakeLists owns the "-cenos.N" pre-release tag (bump
-# GETDP_CENOS_REVISION there); this script only describes what the binary was
-# actually linked against. SemVer ignores everything after "+" when comparing
-# versions, so nothing here can affect ordering - it is traceability only.
+#   4.0.0-cenos.2+py310.cu13
+# It only says what the binary was linked against. Which sources it was built
+# from is given by "-cenos.N" and the build repository tag getdp-<x.y.z>-cenos.N
+# (see build.sh), so no git hash is added here. SemVer ignores everything after
+# "+" when comparing versions.
 if [ -z "${BUILD_METADATA:-}" ]; then
   META=()
   # python310.lib -> py310
@@ -76,12 +76,9 @@ if [ -z "${BUILD_METADATA:-}" ]; then
     # CUDA major goes in the tag; "cudss" alone if even that is not derivable.
     if [ -n "$cu" ]; then META+=("cu$cu"); else META+=("cudss"); fi
   fi
-  h=$(git -C "$ROOT/cenos-getdp-fork" log -1 --format=%h 2>/dev/null || true)
-  [ -n "$h" ] && META+=("g$h")
   BUILD_METADATA=$(IFS=.; echo "${META[*]}")
 fi
 OPTS+=("-DGETDP_BUILD_METADATA=$BUILD_METADATA")
-# Normally unset: the fork supplies "-cenos.N" itself. Set it only to override.
 if [ -n "${GETDP_EXTRA_VERSION:-}" ]; then
   OPTS+=("-DGETDP_EXTRA_VERSION=$GETDP_EXTRA_VERSION")
 fi
